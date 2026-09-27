@@ -90,6 +90,9 @@ def blocks(lines, name):
             fence = opened[1]
             boundary = False
             continue
+        # A dated heading opens a card: everything up to the next heading of the same or a
+        # higher level, dated lines and sub-headings included, is that one entry (#118).
+        card = found[-1]['level'] if found[-1]['kind'] == 'entry' else None
         heading = HEADING.match(bare)
         if heading:
             level = len(heading[1])
@@ -102,19 +105,19 @@ def blocks(lines, name):
             elif level <= top:
                 container = index
                 begin('static', index)
+            elif card and level > card:
+                pass
             elif stamp(bare, heading=True):
                 begin('entry', index, stamp(bare, heading=True), level)
-            elif found[-1]['kind'] == 'history' or (
-                    found[-1]['kind'] == 'entry' and not (found[-1]['level'] and level > found[-1]['level'])):
+            elif found[-1]['kind'] in ('history', 'entry'):
                 # An undated heading closes a dated paragraph and a dated heading of the same
                 # or a higher level: it is the file's own structure, not part of the old entry.
-                # Only a deeper sub-heading of a dated heading stays inside that entry.
                 begin('static', index)
             boundary = True
             continue
         if in_history:
             continue
-        key = stamp(bare) if bare.strip() else None
+        key = stamp(bare) if bare.strip() and not card else None
         if key and (boundary or ITEM.match(bare) or LEADING.match(bare)):
             begin('entry', index, key)
         boundary = not bare.strip()
