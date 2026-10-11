@@ -28,6 +28,8 @@ dosyanın mevcut olay listelerine bir kez ekleyin:
 - Antigravity: kullanıcı düzeyindeki `~/.gemini/config/hooks.json`. JSON'u `--harness antigravity`
   ile yeniden üretin; çıktı `hooks` yerine tek bir adlandırılmış hook (`beyin-v3-bridge`) verir,
   bu anahtarı dosyanın kökündeki diğer hook adlarının yanına ekleyin.
+  3.9.0 ve öncesinin köprüsü `--harness antigravity` tanımaz; o sürümlere `rollback`
+  yapmadan önce bu anahtarı dosyadan kaldırın, yoksa komut her çağrıda hata koduyla biter.
 
 Önce mevcut ayarı yedekleyin. Dosyanın tamamını bu çıktıyla değiştirmeyin; diğer
 ayarları ve hook'ları koruyun. Aynı köprüyü iki kez eklemeyin; bir proje için tek
@@ -39,7 +41,12 @@ kullanıcı onayı üretmez.
 
 JSON biçimi 21 Eylül 2026'da [Codex hooks](https://developers.openai.com/codex/hooks)
 ve [Claude hooks](https://code.claude.com/docs/en/hooks) birincil belgeleriyle
-karşılaştırıldı. CLI simülasyonu gerçek Desktop hook teslimi kanıtı değildir;
+karşılaştırıldı. Antigravity biçimi (adlandırılmış hook, `PreInvocation` ve `Stop` için
+düz liste, `conversationId` ve `workspacePaths` alanları, komutun `hooks.json`
+klasöründe çalışması) Antigravity CLI 1.2.16 ikilisine gömülü `hooks.json` belgesinden
+alındı ve 10 Ekim 2026'da aynı sürümle Windows 11'de gerçek bir oturumda denendi;
+1.2.3'e (macOS) gömülü belge de aynı biçimi tarif eder. macOS ve Linux'ta canlı teslim
+denenmedi. CLI simülasyonu gerçek Desktop hook teslimi kanıtı değildir;
 kurulumdan sonra her istemcide aşağıdaki geri okumayı yapın.
 
 ## Kapsam ve ayrı bütçe
@@ -101,6 +108,15 @@ görüldüğünü gösterir; iş sonucu veya görev tamamlanması değildir.
 `doctor --json` içindeki `receipt-gaps.json.checkpoints` alanında proje etiketi
 ve `project_id` bulunur. Prompt olayları alınmadığı için her turun eksiksiz
 receipt kapsamı iddia edilmez. Ajan kayıt yazmadan kapanırsa worker özet uydurmaz.
+
+Vault'un kendi Antigravity hook'u (`.agents/hooks.json`) da proje etiketini aynı kuralla,
+ilk `workspacePaths` girdisinden alır. 3.9.0 ve öncesinde vault içindeki Antigravity
+oturumları hook klasörünün adıyla (`.agents`) etiketleniyordu. Oturum kimliği değişmediği
+için süren bir oturum bölünmez; etiketi ve `project_id` değeri ilk yeni olayda güncellenir,
+yeni olay göndermeyen eski satırlar `.agents` olarak kalır. İlk çalışma alanı vault
+dışındaki bir proje olan vault oturumu o projenin `project_id` değerini taşır (Claude ve
+Codex'te payload `cwd` alanı için de böyledir); `--project-context on` iken bu oturumun
+receipt özeti o projenin oturum başında görünebilir.
 
 İzole testler üç harness, kapsam/çift tetiklenme korumaları, proje kökeni,
 idempotence, eski checkpoint tablosu geçişi, receipt ile gap kapanması ve gerçek
