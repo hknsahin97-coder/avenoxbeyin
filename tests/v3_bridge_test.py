@@ -1,4 +1,5 @@
 """Global boundary adapters exercised in isolated homes, never user hook settings."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,7 @@ import tempfile
 import unittest
 import zipfile
 
-from v3_package_helpers import inherited_env
+from v3_package_helpers import inherited_env, install
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / 'template/.claude/scripts'
@@ -192,6 +193,52 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(set(narrowed['beyin-v3-bridge']), {'PreInvocation'})
         with self.assertRaises(AssertionError):
             self.invoke(extra=['--print-config', '--event', 'SessionEnd'], harness='antigravity')
+
+    def test_folder_below_another_installed_vault_is_skipped_for_every_client(self):
+        # The owning vault is found by walking up, so a subfolder is as silent as the vault root.
+        below = self.root / 'Projects' / 'second-vault' / 'notes' / 'deep'; below.mkdir(parents=True)
+        (self.root / 'Projects' / 'second-vault' / '.beyin-runtime.json').write_text('{}')
+        for harness in ('codex', 'claude'):
+            self.assertEqual(self.invoke(dict(self.payload, cwd=str(below)), harness=harness), {})
+        for workspaces in ([below], [self.project, below]):
+            self.assertEqual(self.agy('PreInvocation', workspaces, invocationNum=0), {})
+        self.assertEqual(self.queued(), [])
+
+    def test_antigravity_vault_adapter_labels_the_first_workspace_never_the_hook_folder(self):
+        # A real install: the vault's own .agents/hooks.json shares the bridge's project rule (origin()).
+        installed = install(self.vault, self.state, self.env)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        local = json.loads((self.vault / '.agents/hooks.json').read_text(encoding='utf-8'))['beyin-v3']
+        config = self.invoke(extra=['--print-config'], harness='antigravity',
+                             script=self.vault / '.claude/scripts/beyin_v3_bridge.py')['beyin-v3-bridge']
+        # The global hook keeps the timeout the installer chose for the vault's Antigravity hooks.
+        self.assertEqual({native: handlers[0]['timeout'] for native, handlers in config.items()},
+                         {native: handlers[0]['timeout'] for native, handlers in local.items()})
+        hook_folder = self.vault / '.agents'  # Antigravity runs a hook where its hooks.json lives.
+        cases = {'agy-vault': (dict(workspacePaths=[str(self.vault)]), self.vault.name),
+                 'agy-first-of-two': (dict(workspacePaths=[str(self.project), str(self.vault)]), self.project.name),
+                 'agy-cwd-field': (dict(workspacePaths=[str(self.vault)], cwd=str(hook_folder)), self.vault.name),
+                 'agy-no-workspaces': ({}, None),
+                 'agy-null-workspace': (dict(workspacePaths=[None]), None),
+                 'agy-relative-workspace': (dict(workspacePaths=['.']), None),
+                 'agy-cwd-field-only': (dict(cwd=str(hook_folder)), None)}
+        for conversation, (fields, _) in cases.items():
+            result = subprocess.run(local['PreInvocation'][0]['command'], shell=True, capture_output=True, text=True,
+                                    input=json.dumps(dict(fields, conversationId=conversation, invocationNum=0)),
+                                    encoding='utf-8', env=self.env, cwd=hook_folder, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        events = {event['session']: event for event in self.queued()}
+        self.assertEqual(len(events), len(cases))
+        for conversation, (_, label) in cases.items():
+            with self.subTest(conversation=conversation):
+                # The vault adapter keeps the plain conversation id as the session.
+                event = events[hashlib.sha256(conversation.encode()).hexdigest()[:24]]
+                self.assertEqual(event['harness'], 'antigravity')
+                self.assertEqual(event.get('project'), label)
+                self.assertEqual('project_id' in event, label is not None)
+        # The global hook sees the same in-vault conversation and leaves it to the vault.
+        self.assertEqual(self.agy('PreInvocation', [self.vault], invocationNum=0), {})
+        self.assertEqual(len(self.queued()), len(cases))
 
     def test_gap_projection_preserves_project_and_receipt_clears_gap(self):
         self.invoke()

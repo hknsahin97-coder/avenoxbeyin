@@ -19,15 +19,17 @@ ANTIGRAVITY = {'PreInvocation': 'SessionStart', 'Stop': 'Stop'}
 
 
 def working_directory(payload, harness):
-    value = payload.get('cwd')
-    if value is None and harness == 'antigravity':
-        # Antigravity runs the hook in the hooks.json folder; the project is the first workspace.
+    if harness == 'antigravity':
+        # Antigravity sends no cwd and runs the hook in the hooks.json folder, so the first
+        # workspace is the project: a cwd field or the process directory never stands in for it.
         paths = payload.get('workspacePaths')
-        value = paths[0] if isinstance(paths, list) and paths else ''
-    if value is None:
-        value = os.environ.get('CLAUDE_PROJECT_DIR') if harness == 'claude' else None
-    if value is None:
-        value = os.getcwd()
+        value = paths[0] if isinstance(paths, list) and paths else None
+    else:
+        value = payload.get('cwd')
+        if value is None:
+            value = os.environ.get('CLAUDE_PROJECT_DIR') if harness == 'claude' else None
+        if value is None:
+            value = os.getcwd()
     if not isinstance(value, str) or not value or not Path(value).is_absolute():
         return None
     return Path(value).resolve()
