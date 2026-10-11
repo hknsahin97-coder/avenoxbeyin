@@ -153,6 +153,17 @@ class KnowledgeDistillationTest(unittest.TestCase):
         self.assertIsNone(freshness['last_distilled_at'])
         self.assertIsNone(freshness['latest_source'])
 
+    def test_knowledge_freshness_skips_generated_frontmatter_in_template_root(self):
+        """Doctor reads the frontmatter, so a generated: true note is no distillation in any root; a hand-edited one is."""
+        engine = SyncEngine(self.vault, self.state)
+        root = self.vault / '🧠 500-Knowledge'
+        root.mkdir()
+        (root / 'özet.md').write_text('---\ngenerated: true\n---\n# Üretilmiş özet\n', encoding='utf-8')
+        with engine.store._connect() as db:
+            self.assertIsNone(knowledge_freshness(self.vault, db)['latest_source'])
+            (root / 'elle.md').write_text('# Elle yazılmış not\n', encoding='utf-8')
+            self.assertEqual(knowledge_freshness(self.vault, db)['latest_source'], '🧠 500-Knowledge/elle.md')
+
     def test_stop_hook_and_doctor_count_the_same_notes(self):
         spec = importlib.util.spec_from_file_location('v3_distillation_hook', ROOT / 'template/.claude/scripts/beyin_v3_hook.py')
         hook = importlib.util.module_from_spec(spec)
